@@ -325,85 +325,6 @@ elif menu == "📊 Analytics":
         except Exception as e:
             st.warning(f"Geographical aggregation failed: {e}")
 
-        # ------- Preprocessing & Classification snippet (from microplasticDM) -------
-        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example)")
-        try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.preprocessing import OneHotEncoder
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.metrics import classification_report, accuracy_score
-
-            # Ensure required columns exist
-            features_cols = []
-            for col in ['Site', 'Place', 'Latitude', 'Longitude', 'Year']:
-                if col in df.columns:
-                    features_cols.append(col)
-
-            if len(features_cols) < 2:
-                st.info("Not enough features for classification example. Skipping RF classification block.")
-            else:
-                features = ['Site', 'Place', 'Latitude', 'Longitude', 'Year']
-                # keep only existing features
-                features = [f for f in features if f in df.columns]
-                target = 'Microplastic_Level'
-                X = df[features].copy()
-                y = df[target].copy()
-
-                # encode categorical features if present
-                categorical_features = [c for c in ['Site','Place'] if c in X.columns]
-                if len(categorical_features) > 0:
-                    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-                    encoded_categorical_features = encoder.fit_transform(X[categorical_features])
-                    encoded_feature_names = encoder.get_feature_names_out(categorical_features)
-                    encoded_df = pd.DataFrame(encoded_categorical_features, columns=encoded_feature_names, index=X.index)
-                    X = X.drop(categorical_features, axis=1)
-                    X = pd.concat([X, encoded_df], axis=1)
-
-                # categorize microplastic level into Low/Medium/High using quantiles (as in Ma'am's notebook)
-                low_threshold = y.quantile(0.5)
-                medium_threshold = y.quantile(0.9)
-
-                def categorize_microplastic_level(level):
-                    if level <= low_threshold:
-                        return 'Low'
-                    elif level <= medium_threshold:
-                        return 'Medium'
-                    else:
-                        return 'High'
-
-                y_categorized = y.apply(categorize_microplastic_level)
-
-                # split
-                X_train, X_test, y_train, y_test = train_test_split(X, y_categorized, test_size=0.2, random_state=42, stratify=y_categorized)
-
-                rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
-                rf_clf.fit(X_train, y_train)
-                y_pred_cat = rf_clf.predict(X_test)
-
-                classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
-                acc = accuracy_score(y_test, y_pred_cat)
-
-                # ---- Enhanced display: show classification report as DataFrame (clean table format) ----
-                from sklearn.metrics import classification_report, accuracy_score
-                import pandas as pd
-
-                # Generate classification report as dict
-                classification_rep_dict = classification_report(y_test, y_pred_cat, output_dict=True, zero_division=0)
-                acc = accuracy_score(y_test, y_pred_cat)
-
-                # Convert to DataFrame
-                report_df = pd.DataFrame(classification_rep_dict).transpose()
-
-                st.subheader("📘 Classification Report (Random Forest)")
-                st.dataframe(report_df.style.format("{:.2f}"))
-
-                # Display accuracy separately below
-                st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
-
-
-        except Exception as e:
-            st.warning(f"Classification block failed or skipped: {e}")
-
         # NOTE: Forecasting blocks (ARIMA, SES, Prophet, combined plot) were originally here in Ma'am's notebook.
         # Per your instruction, those forecasting RESULT displays are moved to the Predictions tab below.
         # All original forecasting code and comments are preserved but relocated.
@@ -569,6 +490,81 @@ elif menu == "🔮 Predictions":
                     vcol2.metric("Recall Level", "Good" if rec > 0.7 else "Poor")
                     vcol3.metric("Precision Level", "Stable" if prec > 0.7 else "Unstable")
 
+# ------- Preprocessing & Classification snippet (from microplasticDM) -------
+        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example)")
+        try:
+            from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import OneHotEncoder
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import classification_report, accuracy_score
+
+            # Ensure required columns exist
+            features_cols = []
+            for col in ['Site', 'Place', 'Latitude', 'Longitude', 'Year']:
+                if col in df.columns:
+                    features_cols.append(col)
+
+            if len(features_cols) < 2:
+                st.info("Not enough features for classification example. Skipping RF classification block.")
+            else:
+                features = ['Site', 'Place', 'Latitude', 'Longitude', 'Year']
+                # keep only existing features
+                features = [f for f in features if f in df.columns]
+                target = 'Microplastic_Level'
+                X = df[features].copy()
+                y = df[target].copy()
+
+                # encode categorical features if present
+                categorical_features = [c for c in ['Site','Place'] if c in X.columns]
+                if len(categorical_features) > 0:
+                    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+                    encoded_categorical_features = encoder.fit_transform(X[categorical_features])
+                    encoded_feature_names = encoder.get_feature_names_out(categorical_features)
+                    encoded_df = pd.DataFrame(encoded_categorical_features, columns=encoded_feature_names, index=X.index)
+                    X = X.drop(categorical_features, axis=1)
+                    X = pd.concat([X, encoded_df], axis=1)
+
+                # categorize microplastic level into Low/Medium/High using quantiles (as in Ma'am's notebook)
+                low_threshold = y.quantile(0.5)
+                medium_threshold = y.quantile(0.9)
+
+                def categorize_microplastic_level(level):
+                    if level <= low_threshold:
+                        return 'Low'
+                    elif level <= medium_threshold:
+                        return 'Medium'
+                    else:
+                        return 'High'
+
+                y_categorized = y.apply(categorize_microplastic_level)
+
+                # split
+                X_train, X_test, y_train, y_test = train_test_split(X, y_categorized, test_size=0.2, random_state=42, stratify=y_categorized)
+
+                rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
+                rf_clf.fit(X_train, y_train)
+                y_pred_cat = rf_clf.predict(X_test)
+
+                classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
+                acc = accuracy_score(y_test, y_pred_cat)
+
+                # ---- Enhanced display: show classification report as DataFrame (clean table format) ----
+                from sklearn.metrics import classification_report, accuracy_score
+                import pandas as pd
+
+                # Generate classification report as dict
+                classification_rep_dict = classification_report(y_test, y_pred_cat, output_dict=True, zero_division=0)
+                acc = accuracy_score(y_test, y_pred_cat)
+
+                # Convert to DataFrame
+                report_df = pd.DataFrame(classification_rep_dict).transpose()
+
+                st.subheader("📘 Classification Report (Random Forest)")
+                st.dataframe(report_df.style.format("{:.2f}"))
+
+                # Display accuracy separately below
+                st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
+
                     # --- Confusion Matrix Section ---
                     st.subheader("📘 Confusion Matrix (Validation Visualization)")
 
@@ -662,55 +658,74 @@ elif menu == "🔮 Predictions":
         except Exception as e:
                 st.error(f"Random Forest failed: {e}")
 
-    # -------------------- PROPHET --------------------
-    elif model_choice == "Prophet":
-        try:
-            from prophet import Prophet
-            from sklearn.metrics import mean_absolute_error
-            year_col = [c for c in df_model.columns if c.lower() == "year"][0]
-            prophet_df = df_model[[year_col, target_col]].rename(columns={year_col: "ds", target_col: "y"})
-            prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
+   # -------------------- PROPHET --------------------
+elif model_choice == "Prophet":
+    try:
+        from prophet import Prophet
+        from prophet.diagnostics import performance_metrics
+        from sklearn.metrics import mean_absolute_error
 
-            prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
+        # --- Prepare data ---
+        year_col = [c for c in df_model.columns if c.lower() == "year"][0]
+        prophet_df = df_model[[year_col, target_col]].rename(columns={year_col: "ds", target_col: "y"})
+        prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
+        prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
 
-            if len(prophet_df) < 10:
-                st.warning("⚠️ Not enough data points for Prophet (minimum 10). Try SARIMA instead.")
-            else:
+        if len(prophet_df) < 10:
+            st.warning("⚠️ Not enough data points for Prophet (minimum 10). Try SARIMA instead.")
+        else:
+            # --- Instantiate Prophet safely ---
+            try:
                 m = Prophet(yearly_seasonality=True)
+            except Exception as inner_e:
+                st.warning(f"Prophet initialization issue: {inner_e}")
+                st.info("Attempting fallback to legacy import (fbprophet)...")
+                from fbprophet import Prophet as Prophet  # fallback for older installs
+                m = Prophet(yearly_seasonality=True)
+
+            # --- Fit the model ---
+            with st.spinner("Training Prophet model... please wait"):
                 m.fit(prophet_df)
-                future = m.make_future_dataframe(periods=5, freq='Y')
-                forecast = m.predict(future)
-                y_true = prophet_df["y"]
-                y_pred = m.predict(prophet_df)["yhat"]
 
-                r2 = r2_score(y_true, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-                mae = mean_absolute_error(y_true, y_pred)
+            # --- Forecast 5 future periods ---
+            future = m.make_future_dataframe(periods=5, freq='Y')
+            forecast = m.predict(future)
 
-                def interpret_r2(r2): 
-                    return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
-                def interpret_err(err, y): 
-                    ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
-                    return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
+            # --- Evaluate model ---
+            y_true = prophet_df["y"]
+            y_pred = m.predict(prophet_df)["yhat"]
 
-                # --- Accuracy Section ---
-                st.subheader("📊 Model Accuracy")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("R²", f"{r2:.3f}")
-                col2.metric("RMSE", f"{rmse:.3f}")
-                col3.metric("MAE", f"{mae:.3f}")
+            from sklearn.metrics import r2_score, mean_squared_error
+            r2 = r2_score(y_true, y_pred)
+            rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+            mae = mean_absolute_error(y_true, y_pred)
 
-                # --- Validation Section ---
-                vcol1, vcol2, vcol3 = st.columns(3)
-                vcol1.metric("R² Interpretation", interpret_r2(r2))
-                vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
-                vcol3.metric("MAE Level", interpret_err(mae, y_true))
+            def interpret_r2(r2):
+                return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
+            def interpret_err(err, y):
+                ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
+                return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
 
-                st.pyplot(m.plot(forecast))
-                st.pyplot(m.plot_components(forecast))
+            # --- Display metrics ---
+            st.subheader("📊 Model Accuracy")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("R²", f"{r2:.3f}")
+            col2.metric("RMSE", f"{rmse:.3f}")
+            col3.metric("MAE", f"{mae:.3f}")
 
-        except Exception as e:
-            st.error(f"Prophet forecasting failed: {e}")
+            vcol1, vcol2, vcol3 = st.columns(3)
+            vcol1.metric("R² Interpretation", interpret_r2(r2))
+            vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
+            vcol3.metric("MAE Level", interpret_err(mae, y_true))
+
+            # --- Plot forecast results ---
+            st.pyplot(m.plot(forecast))
+            st.pyplot(m.plot_components(forecast))
+
+            st.success("✅ Prophet forecasting completed successfully!")
+
+    except Exception as e:
+        st.error(f"Prophet forecasting failed: {e}")
 
     # -------------------- ARIMA --------------------
     elif model_choice == "ARIMA":
