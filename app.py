@@ -583,7 +583,7 @@ elif menu == "🔮 Predictions":
                     ax.set_ylabel("True Labels", color='black')
                     st.pyplot(fig)
 
-                    # feature importance (both modes)
+                    # feature importance
                 if task_type == "Regression":
                     st.subheader("🌿 Feature Importance")
                 try:
@@ -641,14 +641,14 @@ elif menu == "🔮 Predictions":
         except Exception as e:
                 st.error(f"Random Forest failed: {e}")
 
-        # -------------------- PROPHET --------------------
+           # -------------------- PROPHET (fixed for new version) --------------------
     elif model_choice == "Prophet":
         try:
-            st.subheader("🟣 Prophet Forecast")
+            st.subheader("🟣 Prophet Forecast (New Version Compatible)")
             from prophet import Prophet
             from sklearn.metrics import mean_absolute_error
 
-            # --- Prepare Data ---
+            # --- Prepare data ---
             if "Year" not in df_model.columns:
                 st.error("⚠️ 'Year' column not found. Prophet requires a time variable.")
             else:
@@ -657,42 +657,39 @@ elif menu == "🔮 Predictions":
                 prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
 
                 if len(prophet_df) < 3:
-                    st.info("Not enough data points for Prophet (minimum 3). Skipping Prophet forecast.")
+                    st.info("Not enough data for Prophet (minimum 3 points required).")
                 else:
-                    # --- Safe Prophet initialization ---
+                    # --- Initialize Prophet safely ---
                     try:
                         m = Prophet(yearly_seasonality=True)
-                    except Exception as init_error:
-                        st.warning(f"Prophet initialization issue: {init_error}")
-                        try:
-                            from fbprophet import Prophet as Prophet
-                            m = Prophet(yearly_seasonality=True)
-                        except Exception as legacy_error:
-                            st.error(f"Prophet could not initialize: {legacy_error}")
-                            m = None
+                        st.info("✅ Prophet model initialized successfully using the new backend.")
+                    except Exception as e:
+                        st.error(f"Prophet initialization failed: {e}")
+                        m = None
 
                     if m is not None:
                         with st.spinner("Training Prophet model... please wait"):
                             m.fit(prophet_df)
 
-                        # --- Forecast ---
+                        # --- Forecast next 5 years ---
                         future = m.make_future_dataframe(periods=5, freq='Y')
                         forecast = m.predict(future)
 
-                        # --- Evaluation ---
+                        # --- Evaluate ---
                         y_true = prophet_df["y"]
                         y_pred = m.predict(prophet_df)["yhat"]
+                        from sklearn.metrics import r2_score, mean_squared_error
                         r2 = r2_score(y_true, y_pred)
                         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
                         mae = mean_absolute_error(y_true, y_pred)
 
                         def interpret_r2(r2):
-                            return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
+                            return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor"
                         def interpret_err(err, y):
                             ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
                             return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
 
-                        # --- Display Metrics ---
+                        # --- Display metrics ---
                         st.subheader("📊 Model Accuracy")
                         col1, col2, col3 = st.columns(3)
                         col1.metric("R²", f"{r2:.3f}")
@@ -704,29 +701,24 @@ elif menu == "🔮 Predictions":
                         vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
                         vcol3.metric("MAE Level", interpret_err(mae, y_true))
 
-                        # --- Display Forecast Data ---
-                        st.markdown("### 🔮 Prophet Forecast Results (next 5 years)")
+                        # --- Forecast table ---
+                        st.markdown("### 🔮 Prophet Forecast Results")
                         st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail())
 
-                        # --- Plot Forecast ---
+                        # --- Forecast plot ---
                         try:
-                            st.markdown("### 📈 Prophet Forecast Plot")
                             fig1 = m.plot(forecast)
                             st.pyplot(fig1)
 
-                            st.markdown("### 🔍 Prophet Components")
                             fig2 = m.plot_components(forecast)
                             st.pyplot(fig2)
-                        except Exception as plot_error:
-                            st.warning(f"Plotting failed: {plot_error}")
+                            st.success("✅ Prophet forecast visualization completed successfully!")
+                        except Exception as e:
+                            st.warning(f"Plotting failed: {e}")
 
-                        # --- Save future forecast to session for Reports tab ---
-                        forecast_future = forecast[forecast["ds"] > prophet_df["ds"].max()]
-                        if not forecast_future.empty:
-                            st.session_state["prophet_forecast"] = forecast_future[["ds", "yhat", "yhat_lower", "yhat_upper"]]
-                            st.success("✅ Prophet forecast saved for Reports tab.")
-                        else:
-                            st.info("No future forecast values generated.")
+                        # --- Save forecast to session ---
+                        st.session_state["prophet_forecast"] = forecast
+                        st.success("✅ Prophet forecast saved for Reports tab.")
 
         except Exception as e:
             st.error(f"Prophet forecasting failed: {e}")
