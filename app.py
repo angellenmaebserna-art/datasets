@@ -326,7 +326,7 @@ elif menu == "📊 Analytics":
             st.warning(f"Geographical aggregation failed: {e}")
 
         # ------- Preprocessing & Classification snippet (from microplasticDM) -------
-        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example) — Ma'am's code preserved")
+        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example)")
         try:
             from sklearn.model_selection import train_test_split
             from sklearn.preprocessing import OneHotEncoder
@@ -383,9 +383,23 @@ elif menu == "📊 Analytics":
                 classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
                 acc = accuracy_score(y_test, y_pred_cat)
 
-                st.text("Classification Report (Random Forest):")
-                st.text(classification_rep)
-                st.write(f"Accuracy: {acc:.4f}")
+                # ---- Enhanced display: show classification report as DataFrame (clean table format) ----
+                from sklearn.metrics import classification_report, accuracy_score
+                import pandas as pd
+
+                # Generate classification report as dict
+                classification_rep_dict = classification_report(y_test, y_pred_cat, output_dict=True, zero_division=0)
+                acc = accuracy_score(y_test, y_pred_cat)
+
+                # Convert to DataFrame
+                report_df = pd.DataFrame(classification_rep_dict).transpose()
+
+                st.subheader("📘 Classification Report (Random Forest)")
+                st.dataframe(report_df.style.format("{:.2f}"))
+
+                # Display accuracy separately below
+                st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
+
 
         except Exception as e:
             st.warning(f"Classification block failed or skipped: {e}")
@@ -651,35 +665,21 @@ elif menu == "🔮 Predictions":
     # -------------------- PROPHET --------------------
     elif model_choice == "Prophet":
         try:
-            st.subheader("🟣 Prophet Forecast (Ma'am's code preserved)")
             from prophet import Prophet
             from sklearn.metrics import mean_absolute_error
-
-            # Prophet block originally from Ma'am's notebook; preserved comments/explanations
             year_col = [c for c in df_model.columns if c.lower() == "year"][0]
             prophet_df = df_model[[year_col, target_col]].rename(columns={year_col: "ds", target_col: "y"})
             prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
 
             prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
 
-            if len(prophet_df) < 3:
-                st.info("Not enough data for Prophet (recommended >= 3). Skipping Prophet.")
+            if len(prophet_df) < 10:
+                st.warning("⚠️ Not enough data points for Prophet (minimum 10). Try SARIMA instead.")
             else:
-                # set up cmdstan if available (best-effort)
-                if cmdstanpy is not None:
-                    try:
-                        if not cmdstanpy.cmdstan_path():
-                            with st.spinner("Installing cmdstan (this may take a while)..."):
-                                cmdstanpy.install_cmdstan()
-                    except Exception:
-                        pass
-
                 m = Prophet(yearly_seasonality=True)
-                with st.spinner("Training Prophet..."):
-                    m.fit(prophet_df)
-                future = m.make_future_dataframe(periods=3, freq='Y')
+                m.fit(prophet_df)
+                future = m.make_future_dataframe(periods=5, freq='Y')
                 forecast = m.predict(future)
-
                 y_true = prophet_df["y"]
                 y_pred = m.predict(prophet_df)["yhat"]
 
@@ -706,14 +706,8 @@ elif menu == "🔮 Predictions":
                 vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
                 vcol3.metric("MAE Level", interpret_err(mae, y_true))
 
-                st.write("Prophet forecast (tail):")
-                st.dataframe(forecast[['ds','yhat','yhat_lower','yhat_upper']].tail())
-
-                # Plot prophet results (Ma'am's original plotting code preserved)
-                fig = m.plot(forecast)
-                st.pyplot(fig)
-                fig2 = m.plot_components(forecast)
-                st.pyplot(fig2)
+                st.pyplot(m.plot(forecast))
+                st.pyplot(m.plot_components(forecast))
 
         except Exception as e:
             st.error(f"Prophet forecasting failed: {e}")
@@ -721,7 +715,7 @@ elif menu == "🔮 Predictions":
     # -------------------- ARIMA --------------------
     elif model_choice == "ARIMA":
         try:
-            st.subheader("🔴 ARIMA Model (Ma'am's code preserved)")
+            st.subheader("🔴 ARIMA Model")
             from statsmodels.tsa.arima.model import ARIMA
 
             if yearly_microplastic is None or len(yearly_microplastic) < 3:
@@ -748,7 +742,7 @@ elif menu == "🔮 Predictions":
     # -------------------- SES --------------------
     elif model_choice == "SES":
         try:
-            st.subheader("🟢 Simple Exponential Smoothing (Ma'am's code preserved)")
+            st.subheader("🟢 Simple Exponential Smoothing")
             from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 
             if yearly_microplastic is None or len(yearly_microplastic) < 3:
@@ -770,7 +764,7 @@ elif menu == "🔮 Predictions":
 
     # -------------------- SARIMA --------------------
     elif model_choice == "SARIMA":
-        st.markdown("### 🔁 SARIMA (Ma'am's code preserved)")
+        st.markdown("### 🔁 SARIMA")
         try:
             import statsmodels.api as sm
             from sklearn.metrics import mean_absolute_error
@@ -842,7 +836,7 @@ elif menu == "🔮 Predictions":
 
     # -------------------- ALL / COMPARE (Combined Forecast Plot) --------------------
     elif model_choice == "All (compare)":
-        st.subheader("📉 Combined Historical & Forecast Plot (Ma'am's combined visualization preserved)")
+        st.subheader("📉 Combined Historical & Forecast Plot")
         # Recompute yearly if needed
         if yearly_microplastic is None:
             if 'Year' in df_model.columns:
