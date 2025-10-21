@@ -491,7 +491,7 @@ elif menu == "🔮 Predictions":
                     vcol2.metric("Recall Level", "Good" if rec > 0.7 else "Poor")
                     vcol3.metric("Precision Level", "Stable" if prec > 0.7 else "Unstable")
 
-                    st.markdown("### 🧠 Preprocessing & Classification (Random Forest example) — Ma'am's code preserved")
+                    st.markdown("### 🧠 Preprocessing & Classification")
                     try:
                         from sklearn.model_selection import train_test_split
                         from sklearn.preprocessing import OneHotEncoder
@@ -542,7 +542,7 @@ elif menu == "🔮 Predictions":
                             acc2 = accuracy_score(y_test, y_pred_cat2)
                             report_df = pd.DataFrame(classification_rep).transpose()
 
-                            st.subheader("📘 Classification Report (Random Forest, Ma’am’s Example)")
+                            st.subheader("📘 Classification Report")
                             st.dataframe(report_df.style.format("{:.2f}"))
                             st.markdown(f"**Overall Accuracy:** `{acc2:.4f}`")
 
@@ -585,8 +585,6 @@ elif menu == "🔮 Predictions":
 
                     # feature importance (both modes)
                 if task_type == "Regression":
-                    st.subheader("🌿 Feature Importance")
-                if task_type == "Classification":
                     st.subheader("🌿 Feature Importance")
                 try:
                     rf_obj = rf if task_type == "Regression" else rf_clf
@@ -643,80 +641,101 @@ elif menu == "🔮 Predictions":
         except Exception as e:
                 st.error(f"Random Forest failed: {e}")
 
-    # -------------------- PROPHET --------------------
+        # -------------------- PROPHET --------------------
     elif model_choice == "Prophet":
         try:
-            st.subheader("🟣 Prophet Forecast (Ma'am's code preserved)")
+            st.subheader("🟣 Prophet Forecast")
             from prophet import Prophet
             from sklearn.metrics import mean_absolute_error
 
-            # Prophet block originally from Ma'am's notebook; preserved comments/explanations
-            year_col = [c for c in df_model.columns if c.lower() == "year"][0]
-            prophet_df = df_model[[year_col, target_col]].rename(columns={year_col: "ds", target_col: "y"})
-            prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
-
-            prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
-
-            if len(prophet_df) < 3:
-                st.info("Not enough data for Prophet (recommended >= 3). Skipping Prophet.")
+            # --- Prepare Data ---
+            if "Year" not in df_model.columns:
+                st.error("⚠️ 'Year' column not found. Prophet requires a time variable.")
             else:
-                # set up cmdstan if available (best-effort)
-                if cmdstanpy is not None:
+                prophet_df = df_model[["Year", target_col]].rename(columns={"Year": "ds", target_col: "y"})
+                prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
+                prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
+
+                if len(prophet_df) < 3:
+                    st.info("Not enough data points for Prophet (minimum 3). Skipping Prophet forecast.")
+                else:
+                    # --- Safe Prophet initialization ---
                     try:
-                        if not cmdstanpy.cmdstan_path():
-                            with st.spinner("Installing cmdstan (this may take a while)..."):
-                                cmdstanpy.install_cmdstan()
-                    except Exception:
-                        pass
+                        m = Prophet(yearly_seasonality=True)
+                    except Exception as init_error:
+                        st.warning(f"Prophet initialization issue: {init_error}")
+                        try:
+                            from fbprophet import Prophet as Prophet
+                            m = Prophet(yearly_seasonality=True)
+                        except Exception as legacy_error:
+                            st.error(f"Prophet could not initialize: {legacy_error}")
+                            m = None
 
-                m = Prophet(yearly_seasonality=True)
-                with st.spinner("Training Prophet..."):
-                    m.fit(prophet_df)
-                future = m.make_future_dataframe(periods=3, freq='Y')
-                forecast = m.predict(future)
+                    if m is not None:
+                        with st.spinner("Training Prophet model... please wait"):
+                            m.fit(prophet_df)
 
-                y_true = prophet_df["y"]
-                y_pred = m.predict(prophet_df)["yhat"]
+                        # --- Forecast ---
+                        future = m.make_future_dataframe(periods=5, freq='Y')
+                        forecast = m.predict(future)
 
-                r2 = r2_score(y_true, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-                mae = mean_absolute_error(y_true, y_pred)
+                        # --- Evaluation ---
+                        y_true = prophet_df["y"]
+                        y_pred = m.predict(prophet_df)["yhat"]
+                        r2 = r2_score(y_true, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+                        mae = mean_absolute_error(y_true, y_pred)
 
-                def interpret_r2(r2): 
-                    return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
-                def interpret_err(err, y): 
-                    ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
-                    return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
+                        def interpret_r2(r2):
+                            return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
+                        def interpret_err(err, y):
+                            ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
+                            return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
 
-                # --- Accuracy Section ---
-                st.subheader("📊 Model Accuracy")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("R²", f"{r2:.3f}")
-                col2.metric("RMSE", f"{rmse:.3f}")
-                col3.metric("MAE", f"{mae:.3f}")
+                        # --- Display Metrics ---
+                        st.subheader("📊 Model Accuracy")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.3f}")
+                        col2.metric("RMSE", f"{rmse:.3f}")
+                        col3.metric("MAE", f"{mae:.3f}")
 
-                # --- Validation Section ---
-                vcol1, vcol2, vcol3 = st.columns(3)
-                vcol1.metric("R² Interpretation", interpret_r2(r2))
-                vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
-                vcol3.metric("MAE Level", interpret_err(mae, y_true))
+                        vcol1, vcol2, vcol3 = st.columns(3)
+                        vcol1.metric("R² Interpretation", interpret_r2(r2))
+                        vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
+                        vcol3.metric("MAE Level", interpret_err(mae, y_true))
 
-                st.write("Prophet forecast (tail):")
-                st.dataframe(forecast[['ds','yhat','yhat_lower','yhat_upper']].tail())
+                        # --- Display Forecast Data ---
+                        st.markdown("### 🔮 Prophet Forecast Results (next 5 years)")
+                        st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail())
 
-                # Plot prophet results (Ma'am's original plotting code preserved)
-                fig = m.plot(forecast)
-                st.pyplot(fig)
-                fig2 = m.plot_components(forecast)
-                st.pyplot(fig2)
+                        # --- Plot Forecast ---
+                        try:
+                            st.markdown("### 📈 Prophet Forecast Plot")
+                            fig1 = m.plot(forecast)
+                            st.pyplot(fig1)
+
+                            st.markdown("### 🔍 Prophet Components")
+                            fig2 = m.plot_components(forecast)
+                            st.pyplot(fig2)
+                        except Exception as plot_error:
+                            st.warning(f"Plotting failed: {plot_error}")
+
+                        # --- Save future forecast to session for Reports tab ---
+                        forecast_future = forecast[forecast["ds"] > prophet_df["ds"].max()]
+                        if not forecast_future.empty:
+                            st.session_state["prophet_forecast"] = forecast_future[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+                            st.success("✅ Prophet forecast saved for Reports tab.")
+                        else:
+                            st.info("No future forecast values generated.")
 
         except Exception as e:
             st.error(f"Prophet forecasting failed: {e}")
 
+
     # -------------------- ARIMA --------------------
     elif model_choice == "ARIMA":
         try:
-            st.subheader("🔴 ARIMA Model (Ma'am's code preserved)")
+            st.subheader("🔴 ARIMA Model")
             from statsmodels.tsa.arima.model import ARIMA
 
             if yearly_microplastic is None or len(yearly_microplastic) < 3:
@@ -743,7 +762,7 @@ elif menu == "🔮 Predictions":
     # -------------------- SES --------------------
     elif model_choice == "SES":
         try:
-            st.subheader("🟢 Simple Exponential Smoothing (Ma'am's code preserved)")
+            st.subheader("🟢 Simple Exponential Smoothing")
             from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 
             if yearly_microplastic is None or len(yearly_microplastic) < 3:
@@ -765,7 +784,7 @@ elif menu == "🔮 Predictions":
 
     # -------------------- SARIMA --------------------
     elif model_choice == "SARIMA":
-        st.markdown("### 🔁 SARIMA (Ma'am's code preserved)")
+        st.markdown("### 🔁 SARIMA")
         try:
             import statsmodels.api as sm
             from sklearn.metrics import mean_absolute_error
@@ -837,7 +856,7 @@ elif menu == "🔮 Predictions":
 
     # -------------------- ALL / COMPARE (Combined Forecast Plot) --------------------
     elif model_choice == "All (compare)":
-        st.subheader("📉 Combined Historical & Forecast Plot (Ma'am's combined visualization preserved)")
+        st.subheader("📉 Combined Historical & Forecast Plot")
         # Recompute yearly if needed
         if yearly_microplastic is None:
             if 'Year' in df_model.columns:
