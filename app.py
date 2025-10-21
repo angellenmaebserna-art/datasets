@@ -124,7 +124,7 @@ section[data-testid="stSidebar"] {
 st.sidebar.title("Select Dataset")
 
 csv_files = [
-    "all_dataset_csv_file/merged_microplastic_data.csv"
+    "merged_microplastic_data.csv"
 ]
 
 datasets = {}
