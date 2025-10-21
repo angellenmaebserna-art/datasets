@@ -564,6 +564,9 @@ elif menu == "🔮 Predictions":
 
                 # Display accuracy separately below
                 st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
+                
+                except Exception as e:
+            st.warning(f"Classification block failed or skipped: {e}")
 
                     # --- Confusion Matrix Section ---
                     st.subheader("📘 Confusion Matrix (Validation Visualization)")
