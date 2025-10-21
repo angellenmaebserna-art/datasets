@@ -6,8 +6,5 @@ seaborn
 scikit-learn
 statsmodels
 prophet
-cmdstanpy
-pystan
 folium
-
-
+cmdstanpy
