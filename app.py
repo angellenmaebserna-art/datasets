@@ -1,4 +1,4 @@
-# merged app.py
+# app.py — FINAL CLEAN VERSION (Forecasts moved to 🔮 Predictions tab)
 import os
 import itertools
 import streamlit as st
@@ -7,932 +7,191 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Try to set Prophet backend environment to CMDSTANPY to reduce backend errors in restricted envs
 os.environ.setdefault('PROPHET_BACKEND', 'CMDSTANPY')
-
-# Optional: avoid matplotlib warnings in Streamlit
 plt.ioff()
 
-# ML / stats imports (used in various parts; wrapped in try: except when used)
 try:
     import cmdstanpy
 except Exception:
     cmdstanpy = None
 
-# Some heavier imports will be done where needed with try/except to avoid crash on import failure
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 
-# -------------------- 🌊 3D Pastel Water Theme --------------------
+# -------------------- 🌊 THEME --------------------
 st.markdown("""
-    <style>
-    /*  🌊 3D animated pastel water background */
-    .stApp {
-        position: relative;
-        background: linear-gradient(to bottom, #f6f9fb 0%, #e5eef3 50%, #437290 100%);
-        overflow: hidden;
-    }
-
-    /* Waves overlay effect */
-    .stApp::before, .stApp::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.4) 0%, transparent 70%),
-                    radial-gradient(circle at 70% 70%, rgba(255,255,255,0.3) 0%, transparent 70%),
-                    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.25) 0%, transparent 70%);
-        animation: waveMove 15s infinite linear;
-        opacity: 0.4;
-        z-index: 0;
-    }
-
-    .stApp::after {
-        animation-delay: -7s;
-        opacity: 0.3;
-    }
-
-    @keyframes waveMove {
-        from { transform: translateX(0) translateY(0) rotate(0deg); }
-        to { transform: translateX(-25%) translateY(-25%) rotate(360deg); }
-    }
-
-   /* 🧩 Fix overlapping sidebar issue */
+<style>
+.stApp {
+    background: linear-gradient(to bottom, #f6f9fb 0%, #e5eef3 50%, #437290 100%);
+    overflow: hidden;
+}
 section[data-testid="stSidebar"] {
-    position: relative !important; /* para dili siya mag-float sa ibabaw */
-    z-index: 1 !important; /* ipa-ubos ang layer niya */
-    overflow-y: auto !important; /* para ma-scroll gihapon */
     background-color: #DDE3EC !important;
-    backdrop-filter: blur(6px);
-    height: 100vh !important; /* sakto ang taas */
 }
-
-/* Main content stays on top of sidebar */
-[data-testid="stAppViewContainer"],
-.main {
-    position: relative !important;
-    z-index: 2 !important; /* mas taas kaysa sidebar */
-}
-
-/* Waves overlay stays behind everything */
-.stApp::before,
-.stApp::after {
-    z-index: 0 !important;
-}
-
-/* Glassy translucent box for parameters */
-[data-testid="stJson"] {
-    background: rgba(240, 248, 255, 0.35) !important;
-    backdrop-filter: blur(10px);
-    border-radius: 15px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: #01579b !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-
-/* DataFrames, charts, and metrics also glass-like */
-[data-testid="stDataFrame"], .stMetric {
-    background: rgba(255, 255, 255, 0.4) !important;
-    backdrop-filter: blur(8px);
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-/* Headings styling - wave effect */
 h1, h2, h3 {
     color: #01579b !important;
     text-shadow: 0 2px 4px rgba(255,255,255,0.6);
-    animation: floatTitle 3s ease-in-out infinite;
 }
-
-@keyframes floatTitle {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-3px); }
-}
-
-/* Buttons hover shimmer */
-button, .stRadio label:hover {
-    background: linear-gradient(120deg, #b3e5fc, #81d4fa);
-    color: #01579b !important;
-    border-radius: 10px;
-    transition: 0.3s;
-}
-
-    </style>
+</style>
 """, unsafe_allow_html=True)
 
-
-# -------------------- LOAD MULTIPLE CSV FILES --------------------
+# -------------------- LOAD CSV --------------------
 st.sidebar.title("Select Dataset")
 
-csv_files = [
-    "merged_microplastic_data.csv"
-]
-
+csv_files = ["merged_microplastic_data.csv"]
 datasets = {}
 for file in csv_files:
     try:
         df_temp = pd.read_csv(file)
-        # normalize column names (strip spaces, consistent casing)
         df_temp.columns = df_temp.columns.str.strip().str.replace(" ", "_").str.title()
-        datasets[file.split("/")[-1].replace(".csv","")] = df_temp
+        datasets[file.split("/")[-1].replace(".csv", "")] = df_temp
     except FileNotFoundError:
         st.warning(f"⚠️ File not found: {file}")
 
 if len(datasets) == 0:
-    st.error("No datasets found in csv_files list. Put your CSV in the app folder or update csv_files.")
+    st.error("No datasets found.")
     st.stop()
 
 selected_dataset = st.sidebar.selectbox("Select Dataset / Place", list(datasets.keys()))
 df = datasets[selected_dataset]
 
-# detect lat/lon columns
-lat_col, lon_col = None, None
-for col in df.columns:
-    if "lat" in col.lower():
-        lat_col = col
-    if "lon" in col.lower() or "long" in col.lower():
-        lon_col = col
+lat_col = next((c for c in df.columns if "lat" in c.lower()), None)
+lon_col = next((c for c in df.columns if "lon" in c.lower() or "long" in c.lower()), None)
 
-# -------------------- STREAMLIT UI --------------------
-st.sidebar.title("Navigation")
-
+# -------------------- NAVIGATION --------------------
 menu = st.sidebar.radio(
     "Go to:",
-    [
-        "🏠 Dashboard",
-        "🌍 Heatmap",
-        "📊 Analytics",
-        "🔮 Predictions",
-        "📜 Reports"
-    ]
+    ["🏠 Dashboard", "🌍 Heatmap", "📊 Analytics", "🔮 Predictions", "📜 Reports"]
 )
 
 # -------------------- DASHBOARD --------------------
 if menu == "🏠 Dashboard":
-    st.title(f"🏠 AI-Driven Microplastic Monitoring Dashboard of {selected_dataset}")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Records", len(df))
-    with col2:
-        st.metric("Available Columns", len(df.columns))
-    with col3:
-        st.metric("Data Source", "Local CSV")
-
+    st.title(f"🏠 AI-Driven Microplastic Dashboard — {selected_dataset}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Records", len(df))
+    c2.metric("Columns", len(df.columns))
+    c3.metric("Source", "Local CSV")
     st.subheader("📊 Data Preview")
     st.dataframe(df.head())
 
 # -------------------- HEATMAP --------------------
 elif menu == "🌍 Heatmap":
-    st.title(f"🌍 Microplastic HeatMap of {selected_dataset}")
-
+    st.title(f"🌍 Microplastic Heatmap — {selected_dataset}")
     if lat_col and lon_col:
-        st.success(f"Detected coordinates: **{lat_col}** and **{lon_col}**")
-
         map_df = df.rename(columns={lat_col: "latitude", lon_col: "longitude"})
         map_df["latitude"] = pd.to_numeric(map_df["latitude"], errors="coerce")
         map_df["longitude"] = pd.to_numeric(map_df["longitude"], errors="coerce")
-
-        if map_df[["latitude", "longitude"]].dropna().empty:
-            st.warning("⚠️ No valid latitude/longitude data found for map display.")
-        else:
+        if not map_df[["latitude", "longitude"]].dropna().empty:
             st.map(map_df[["latitude", "longitude"]].dropna())
+        else:
+            st.warning("No valid coordinates found.")
     else:
-        st.error("⚠️ No latitude/longitude columns found in dataset.")
+        st.error("Latitude/Longitude columns not detected.")
 
-# -------------------- ANALYTICS (merged with ma'am's microplasticDM) --------------------
+# -------------------- ANALYTICS --------------------
 elif menu == "📊 Analytics":
-    st.title(f"📊 Analytics of {selected_dataset}")
+    st.title(f"📊 Analytics Overview — {selected_dataset}")
     st.write("Descriptive and correlation overview of the dataset.")
 
-    # --- Your original Analytics content (kept as-is) ---
+    # --- Basic descriptive ---
+    st.subheader("📋 Descriptive Statistics")
     st.dataframe(df.describe())
 
-    numeric_cols = df.select_dtypes(include=[np.number])
-    if len(numeric_cols.columns) > 1:
-        st.subheader("📉 Correlation Heatmap")
+    if "Microplastic_Level" in df.columns and "Year" in df.columns:
+        st.subheader("📈 Mean Microplastic Level Over Years")
+        yearly = df.groupby("Year")["Microplastic_Level"].mean().reset_index()
         fig, ax = plt.subplots()
-        corr = numeric_cols.corr()
-        if corr.isnull().values.all():
-            st.warning("Not enough numeric data for correlation heatmap.")
-        else:
-            sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-            st.pyplot(fig)
+        sns.lineplot(x="Year", y="Microplastic_Level", data=yearly, marker="o", ax=ax)
+        st.pyplot(fig)
+
+        st.subheader("📊 Correlation Matrix")
+        corr = df.select_dtypes(include=[np.number]).corr()
+        fig, ax = plt.subplots()
+        sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+        st.pyplot(fig)
     else:
-        st.warning("⚠️ Not enough numeric columns for correlation analysis.")
-
-    st.markdown("---")
-    st.header("🔬 Extended Research Analysis (from microplasticDM)")
-    st.write("Below is Ma'am's full analysis — comments and explanations preserved. If any model fails (Prophet/ARIMA), the app will show a warning but will continue running.")
-
-    # Ensure df is loaded (already loaded above). Use column-name normalization if needed.
-    # The original microplasticDM used columns like 'Year', 'Microplastic_Level', 'Latitude', 'Longitude', 'Site', 'Place'
-    # We'll guard for missing columns and try best-effort.
-
-    # Normalize columns to expected names (case-insensitive)
-    col_map = {}
-    for c in df.columns:
-        clower = c.lower()
-        if clower in ["year", "yr"]:
-            col_map[c] = "Year"
-        elif clower in ["microplastic_level", "microplastic level", "microplasticlevel"]:
-            col_map[c] = "Microplastic_Level"
-        elif "latitude" in clower or clower == "lat":
-            col_map[c] = "Latitude"
-        elif "longitude" in clower or "long" in clower or clower == "lon":
-            col_map[c] = "Longitude"
-        elif clower == "site":
-            col_map[c] = "Site"
-        elif clower == "place":
-            col_map[c] = "Place"
-
-    # rename columns if any mappings found
-    if len(col_map) > 0:
-        df = df.rename(columns=col_map)
-
-    # Basic checks
-    expected_cols = ["Year", "Microplastic_Level"]
-    missing_expected = [c for c in expected_cols if c not in df.columns]
-    if missing_expected:
-        st.warning(f"Some expected columns not found for extended analysis: {missing_expected}. Ma'am's analysis may be limited.")
-    else:
-        # ------- Data loading / yearly aggregation (as in microplasticDM) -------
-        try:
-            st.subheader("📅 Yearly Aggregation")
-            yearly_microplastic = df.groupby('Year')['Microplastic_Level'].mean().reset_index()
-            st.dataframe(yearly_microplastic.head())
-        except Exception as e:
-            st.error(f"Failed to compute yearly aggregation: {e}")
-            yearly_microplastic = None
-
-        # ------- Visualizations from microplasticDM -------
-        try:
-            st.subheader("📈 Mean Microplastic Level Over Years")
-            mean_microplastic_by_year = df.groupby('Year')['Microplastic_Level'].mean().reset_index()
-            fig, ax = plt.subplots(figsize=(8,4))
-            sns.lineplot(x='Year', y='Microplastic_Level', data=mean_microplastic_by_year, marker='o', ax=ax)
-            ax.set_title('Mean Microplastic Level Over Years')
-            ax.set_xlabel('Year'); ax.set_ylabel('Mean Microplastic Level')
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"Could not plot mean microplastic by year: {e}")
-
-        # Distribution & boxplot
-        try:
-            st.subheader("🔎 Distribution & Boxplot of Microplastic Levels")
-            fig, ax = plt.subplots(1,2, figsize=(12,4))
-            sns.histplot(df['Microplastic_Level'], kde=True, ax=ax[0])
-            ax[0].set_title('Distribution of Microplastic Levels')
-            sns.boxplot(x=df['Microplastic_Level'], ax=ax[1])
-            ax[1].set_title('Box Plot of Microplastic Levels')
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"Distribution/boxplot error: {e}")
-
-        # Scatter vs Year/Longitude/Latitude
-        try:
-            st.subheader("📌 Scatter: Microplastic vs Year / Longitude / Latitude")
-            fig, ax = plt.subplots(1,3, figsize=(15,4))
-            sns.scatterplot(x='Year', y='Microplastic_Level', data=df, ax=ax[0])
-            ax[0].set_title('Microplastic Level vs Year')
-            sns.scatterplot(x='Longitude', y='Microplastic_Level', data=df, ax=ax[1])
-            ax[1].set_title('Microplastic Level vs Longitude')
-            sns.scatterplot(x='Latitude', y='Microplastic_Level', data=df, ax=ax[2])
-            ax[2].set_title('Microplastic Level vs Latitude')
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"Scatter plots error: {e}")
-
-        # Correlation matrix
-        try:
-            st.subheader("📊 Correlation Matrix")
-            numerical_cols = ['Latitude', 'Longitude', 'Year', 'Microplastic_Level']
-            numerical_cols_existing = [c for c in numerical_cols if c in df.columns]
-            if len(numerical_cols_existing) >= 2:
-                correlation_matrix = df[numerical_cols_existing].corr()
-                fig, ax = plt.subplots(figsize=(8,6))
-                sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
-                ax.set_title('Correlation Matrix of Numerical Variables')
-                st.pyplot(fig)
-            else:
-                st.info("Not enough numerical columns for correlation matrix.")
-        except Exception as e:
-            st.warning(f"Correlation matrix failed: {e}")
-
-        # Microplastic by Place (aggregate)
-        try:
-            st.subheader("📍 Microplastic by Place")
-            if 'Place' in df.columns:
-                microplastic_by_place = df.groupby('Place')['Microplastic_Level'].agg(['mean', 'median', 'count', 'min', 'max']).reset_index()
-                microplastic_by_place_sorted = microplastic_by_place.sort_values(by='mean', ascending=False)
-                st.dataframe(microplastic_by_place_sorted.head(30))
-                st.write(f"Number of unique place locations: {len(microplastic_by_place_sorted)}")
-            else:
-                st.info("No 'Place' column found.")
-        except Exception as e:
-            st.warning(f"Microplastic by Place failed: {e}")
-
-        # Geographical aggregation
-        try:
-            st.subheader("📍 Geographical Aggregation (sample)")
-            if 'Latitude' in df.columns and 'Longitude' in df.columns:
-                microplastic_by_coordinates = df.groupby(['Latitude', 'Longitude'])['Microplastic_Level'].agg(['mean', 'median', 'count']).reset_index()
-                st.dataframe(microplastic_by_coordinates.head())
-                st.write(f"Number of unique coordinate locations: {len(microplastic_by_coordinates)}")
-            else:
-                st.info("No 'Latitude'/'Longitude' columns found for coordinate aggregation.")
-        except Exception as e:
-            st.warning(f"Geographical aggregation failed: {e}")
-
-        # ------- Preprocessing & Classification snippet (from microplasticDM) -------
-        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example) — Ma'am's code preserved")
-        try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.preprocessing import OneHotEncoder
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.metrics import classification_report, accuracy_score
-
-            # Ensure required columns exist
-            features_cols = []
-            for col in ['Site', 'Place', 'Latitude', 'Longitude', 'Year']:
-                if col in df.columns:
-                    features_cols.append(col)
-
-            if len(features_cols) < 2:
-                st.info("Not enough features for classification example. Skipping RF classification block.")
-            else:
-                features = ['Site', 'Place', 'Latitude', 'Longitude', 'Year']
-                # keep only existing features
-                features = [f for f in features if f in df.columns]
-                target = 'Microplastic_Level'
-                X = df[features].copy()
-                y = df[target].copy()
-
-                # encode categorical features if present
-                categorical_features = [c for c in ['Site','Place'] if c in X.columns]
-                if len(categorical_features) > 0:
-                    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-                    encoded_categorical_features = encoder.fit_transform(X[categorical_features])
-                    encoded_feature_names = encoder.get_feature_names_out(categorical_features)
-                    encoded_df = pd.DataFrame(encoded_categorical_features, columns=encoded_feature_names, index=X.index)
-                    X = X.drop(categorical_features, axis=1)
-                    X = pd.concat([X, encoded_df], axis=1)
-
-                # categorize microplastic level into Low/Medium/High using quantiles (as in Ma'am's notebook)
-                low_threshold = y.quantile(0.5)
-                medium_threshold = y.quantile(0.9)
-
-                def categorize_microplastic_level(level):
-                    if level <= low_threshold:
-                        return 'Low'
-                    elif level <= medium_threshold:
-                        return 'Medium'
-                    else:
-                        return 'High'
-
-                y_categorized = y.apply(categorize_microplastic_level)
-
-                # split
-                X_train, X_test, y_train, y_test = train_test_split(X, y_categorized, test_size=0.2, random_state=42, stratify=y_categorized)
-
-                rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
-                rf_clf.fit(X_train, y_train)
-                y_pred_cat = rf_clf.predict(X_test)
-
-                classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
-                acc = accuracy_score(y_test, y_pred_cat)
-
-                st.text("Classification Report (Random Forest):")
-                st.text(classification_rep)
-                st.write(f"Accuracy: {acc:.4f}")
-
-        except Exception as e:
-            st.warning(f"Classification block failed or skipped: {e}")
-
-        # ------- Time series modeling: SES / ARIMA / Prophet (from microplasticDM) -------
-        st.markdown("### ⏳ Time Series Forecasting (ARIMA, SES, Prophet) — Ma'am's code preserved")
-
-        # Prepare yearly_microplastic if not already prepared
-        if yearly_microplastic is None:
-            try:
-                yearly_microplastic = df.groupby('Year')['Microplastic_Level'].mean().reset_index()
-            except Exception as e:
-                st.error(f"Cannot prepare yearly_microplastic: {e}")
-                yearly_microplastic = None
-
-        if yearly_microplastic is not None and len(yearly_microplastic) >= 3:
-            # ARIMA
-            try:
-                st.subheader("🔴 ARIMA Model (order (5,1,0))")
-                from statsmodels.tsa.arima.model import ARIMA
-                model_arima = ARIMA(yearly_microplastic['Microplastic_Level'], order=(5,1,0))
-                with st.spinner("Fitting ARIMA..."):
-                    model_arima_fit = model_arima.fit()
-                st.success("ARIMA model trained successfully.")
-                # Forecast next 3 years
-                forecast_steps = 3
-                forecast = model_arima_fit.forecast(steps=forecast_steps)
-                st.write(f"ARIMA Forecast (next {forecast_steps} steps):")
-                st.dataframe(pd.DataFrame({'Forecast': forecast}).reset_index(drop=True))
-            except Exception as e:
-                st.warning(f"ARIMA model failed: {e}")
-                model_arima_fit = None
-                forecast = None
-                forecast_steps = 0
-
-            # Simple Exponential Smoothing
-            try:
-                st.subheader("🟢 Simple Exponential Smoothing (SES)")
-                from statsmodels.tsa.holtwinters import SimpleExpSmoothing
-                model_ses = SimpleExpSmoothing(yearly_microplastic['Microplastic_Level'])
-                model_ses_fit = model_ses.fit()
-                forecast_steps_ses = 3
-                forecast_ses = model_ses_fit.forecast(steps=forecast_steps_ses)
-                st.write(f"SES Forecast (next {forecast_steps_ses} steps):")
-                st.dataframe(pd.DataFrame({'Forecast_SES': forecast_ses}).reset_index(drop=True))
-            except Exception as e:
-                st.warning(f"SES failed: {e}")
-                forecast_ses = None
-                forecast_steps_ses = 0
-                model_ses_fit = None
-
-            # Prophet
-            try:
-                st.subheader("🟣 Prophet Forecast")
-                # import Prophet safely
-                try:
-                    from prophet import Prophet
-                except Exception as ie:
-                    # try the older pystan-backed prophet import if that exists
-                    try:
-                        import prophet as _p
-                        from prophet import Prophet
-                    except Exception:
-                        raise ie
-
-                # attempt to ensure cmdstan installed if cmdstanpy is present
-                if cmdstanpy is not None:
-                    try:
-                        # install_cmdstan can take time; only run if cmdstan not installed
-                        if not cmdstanpy.cmdstan_path():
-                            with st.spinner("Installing cmdstan (this may take a while)..."):
-                                cmdstanpy.install_cmdstan()
-                    except Exception:
-                        # ignore errors here, will catch later
-                        pass
-
-                # prepare data for Prophet
-                prophet_df = yearly_microplastic.copy()
-                prophet_df['ds'] = pd.to_datetime(prophet_df['Year'].astype(int).astype(str) + '-01-01')
-                prophet_df['y'] = prophet_df['Microplastic_Level']
-                prophet_df = prophet_df[['ds','y']].dropna().drop_duplicates(subset=['ds']).sort_values('ds')
-
-                if len(prophet_df) < 3:
-                    st.info("Not enough data for Prophet (recommended >= 3). Skipping Prophet.")
-                    forecast_prophet = None
-                else:
-                    m = Prophet(yearly_seasonality=True)
-                    with st.spinner("Training Prophet..."):
-                        m.fit(prophet_df)
-                    future = m.make_future_dataframe(periods=3, freq='Y')
-                    forecast_prophet = m.predict(future)
-                    st.write("Prophet forecast (tail):")
-                    st.dataframe(forecast_prophet[['ds','yhat','yhat_lower','yhat_upper']].tail())
-                    # Plot prophet results
-                    fig = m.plot(forecast_prophet)
-                    st.pyplot(fig)
-                    fig2 = m.plot_components(forecast_prophet)
-                    st.pyplot(fig2)
-            except Exception as e:
-                st.warning(f"Prophet forecasting failed or is not available in this environment: {e}")
-                forecast_prophet = None
-
-            # Visualization: combined plot of historical and forecasts
-            try:
-                st.subheader("📉 Combined Historical & Forecast Plot")
-                fig, ax = plt.subplots(figsize=(10,6))
-                ax.plot(yearly_microplastic['Year'], yearly_microplastic['Microplastic_Level'], marker='o', label='Historical Data')
-
-                # ARIMA
-                if 'forecast' in locals() and forecast is not None:
-                    last_year = int(yearly_microplastic['Year'].iloc[-1])
-                    forecast_years = list(range(last_year+1, last_year + forecast_steps + 1))
-                    # forecast may be numpy array/series
-                    ax.plot(forecast_years, list(forecast), marker='x', linestyle='--', label='ARIMA Forecast', color='red')
-
-                # SES
-                if 'forecast_ses' in locals() and forecast_ses is not None:
-                    last_year = int(yearly_microplastic['Year'].iloc[-1])
-                    forecast_years_ses = list(range(last_year+1, last_year + forecast_steps_ses + 1))
-                    ax.plot(forecast_years_ses, list(forecast_ses), marker='o', linestyle='--', label='SES Forecast', color='green')
-
-                # Prophet
-                if 'forecast_prophet' in locals() and forecast_prophet is not None:
-                    prophet_future_forecast = forecast_prophet[forecast_prophet['ds'] > prophet_df['ds'].max()]
-                    if not prophet_future_forecast.empty:
-                        ax.plot(prophet_future_forecast['ds'].dt.year, prophet_future_forecast['yhat'], marker='^', linestyle='-.', label='Prophet Forecast', color='purple')
-                        # fill between
-                        ax.fill_between(prophet_future_forecast['ds'].dt.year, prophet_future_forecast['yhat_lower'], prophet_future_forecast['yhat_upper'], color='purple', alpha=0.1)
-
-                ax.set_title('Historical and Forecasted Microplastic Levels')
-                ax.set_xlabel('Year'); ax.set_ylabel('Microplastic Level')
-                ax.legend(); ax.grid(True)
-                st.pyplot(fig)
-            except Exception as e:
-                st.warning(f"Combined forecast plot failed: {e}")
-
-        else:
-            st.info("Not enough yearly data for time series forecasting (need at least 3 yearly points).")
-
+        st.info("No 'Year' or 'Microplastic_Level' columns found.")
 
 # -------------------- PREDICTIONS --------------------
 elif menu == "🔮 Predictions":
-    st.title(f"🔮 Prediction & Forecasting — {selected_dataset}")
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.title(f"🔮 Forecasting & Prediction — {selected_dataset}")
 
-    model_choice = st.selectbox("Select forecasting model:", ["Random Forest", "Prophet", "SARIMA"])
-    # try to guess target columns
-    potential_targets = [c for c in df.columns if c.lower() in ["microplastic_level", "ph_level", "microplastic level", "ph level"]]
-    if len(potential_targets) == 0:
-        st.warning("No obvious target columns found (like 'Microplastic_Level' or 'pH_Level'). Please ensure data has a target column.")
-        target_col = st.selectbox("Manually select target column:", list(df.columns))
-    else:
-        target_col = st.selectbox("Select target to forecast:", potential_targets)
+    model_choice = st.selectbox("Select Model:", ["Prophet", "SARIMA", "ARIMA", "SES"])
+    target_col = st.selectbox("Select target column:", [c for c in df.columns if "microplastic" in c.lower()])
 
-    # normalize selection to exact column name
-    target_col = [c for c in df.columns if c.lower().replace(" ", "_") == target_col.lower().replace(" ", "_")][0]
-    df_model = df.copy().dropna(subset=[target_col])
+    # --- PREPARE YEARLY DATA ---
+    df = df.dropna(subset=[target_col])
+    year_col = [c for c in df.columns if c.lower() == "year"][0]
+    yearly = df.groupby(year_col)[target_col].mean().reset_index()
 
-    # -------------------- RANDOM FOREST --------------------
-    if model_choice == "Random Forest":
-        st.sidebar.subheader("⚙️ Random Forest Parameters")
-        n_estimators = st.sidebar.slider("Number of Trees (n_estimators)", 50, 500, 300, step=50)
-        max_depth = st.sidebar.slider("Tree Depth (max_depth)", 1, 30, 10)
-        test_size = st.sidebar.slider("Test Data Ratio", 0.1, 0.5, 0.2, step=0.05)
+    # ---------------- PROPHET ----------------
+    if model_choice == "Prophet":
+        from prophet import Prophet
+        from sklearn.metrics import mean_absolute_error
+        prophet_df = yearly.rename(columns={year_col: "ds", target_col: "y"})
+        prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
+        m = Prophet(yearly_seasonality=True)
+        m.fit(prophet_df)
+        future = m.make_future_dataframe(periods=5, freq="Y")
+        forecast = m.predict(future)
+        st.subheader("📊 Prophet Forecast")
+        st.pyplot(m.plot(forecast))
+        st.pyplot(m.plot_components(forecast))
 
-        task_type = st.radio("Select Task Type:", ["Regression", "Classification"])
-
-        try:
-            features = df_model.select_dtypes(include=[np.number]).drop(columns=[target_col], errors="ignore")
-            if features.shape[1] == 0:
-                st.error("No numeric features available for modeling. Please provide numeric feature columns.")
-            else:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    features, df_model[target_col], test_size=test_size, random_state=42
-                )
-
-                # ---------------- REGRESSION MODE ----------------
-                if task_type == "Regression":
-                    from sklearn.ensemble import RandomForestRegressor
-                    from sklearn.metrics import mean_absolute_error
-                    from sklearn.model_selection import cross_val_score  # ✅ added here
-
-                    rf = RandomForestRegressor(
-                        n_estimators=n_estimators, max_depth=max_depth, random_state=42
-                    )
-                    rf.fit(X_train, y_train)
-                    y_pred = rf.predict(X_test)
-
-                    r2 = r2_score(y_test, y_pred)
-                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                    mae = mean_absolute_error(y_test, y_pred)
-
-                    def interpret_r2_local(r2_val):
-                        return (
-                            "Excellent" if r2_val >= 0.8 else
-                            "Good" if r2_val >= 0.6 else
-                            "Fair" if r2_val >= 0.3 else
-                            "Poor" if r2_val >= 0 else
-                            "Very Poor"
-                        )
-
-                    def interpret_err_local(err, y_vals):
-                        ratio = (err / np.mean(y_vals)) * 100 if np.mean(y_vals) != 0 else 0
-                        return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
-
-                    st.subheader("📊 Model Accuracy (Regression)")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("R²", f"{r2:.3f}")
-                    col2.metric("RMSE", f"{rmse:.3f}")
-                    col3.metric("MAE", f"{mae:.3f}")
-
-                    vcol1, vcol2, vcol3 = st.columns(3)
-                    vcol1.metric("R² Interpretation", interpret_r2_local(r2))
-                    vcol2.metric("RMSE Level", interpret_err_local(rmse, y_test))
-                    vcol3.metric("MAE Level", interpret_err_local(mae, y_test))
-
-                    st.subheader("🔁 Model Cross-Validation")
-                    fig, ax = plt.subplots()
-                    ax.scatter(y_test, y_pred, alpha=0.7, s=60)
-                    ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-                    ax.set_xlabel("Actual Values")
-                    ax.set_ylabel("Predicted Values")
-                    st.pyplot(fig)
-
-                    # -------------------- 🔁 CROSS-VALIDATION SECTION --------------------
-
-                    if st.button("Run 5-Fold Cross-Validation"):
-                        with st.spinner("Running cross-validation... please wait."):
-                            cv_scores = cross_val_score(
-                                rf, features, df_model[target_col], cv=5, scoring='r2'
-                            )
-                            mean_score = np.mean(cv_scores)
-                            std_score = np.std(cv_scores)
-
-                            st.success("✅ Cross-validation complete!")
-                            st.write(f"**R² Scores per Fold:** {cv_scores}")
-                            st.write(f"**Average R²:** {mean_score:.4f}")
-                            st.write(f"**Standard Deviation:** {std_score:.4f}")
-
-                            fig, ax = plt.subplots()
-                            ax.bar(range(1, 6), cv_scores)
-                            ax.axhline(y=mean_score, color='red', linestyle='--', label=f"Mean R² = {mean_score:.4f}")
-                            ax.set_xlabel("Fold")
-                            ax.set_ylabel("R² Score")
-                            ax.set_title("5-Fold Cross-Validation Results")
-                            ax.legend()
-                            st.pyplot(fig)
-
-                # ---------------- CLASSIFICATION MODE ----------------
-                else:
-                    from sklearn.ensemble import RandomForestClassifier
-                    from sklearn.metrics import (
-                        accuracy_score, precision_score, recall_score,
-                        f1_score, confusion_matrix
-                    )
-
-                    # Convert target to categorical strings
-                    y_train_cat = y_train.astype(str)
-                    y_test_cat = y_test.astype(str)
-
-                    rf_clf = RandomForestClassifier(
-                        n_estimators=n_estimators,
-                        max_depth=max_depth,
-                        random_state=42,
-                        n_jobs=-1
-                    )
-                    with st.spinner("Training Random Forest classifier..."):
-                        rf_clf.fit(X_train, y_train_cat)
-                        y_pred_cat = rf_clf.predict(X_test)
-
-                    # --- Metrics ---
-                    acc = accuracy_score(y_test_cat, y_pred_cat)
-                    prec = precision_score(y_test_cat, y_pred_cat, average="weighted", zero_division=0)
-                    rec = recall_score(y_test_cat, y_pred_cat, average="weighted", zero_division=0)
-                    f1 = f1_score(y_test_cat, y_pred_cat, average="weighted", zero_division=0)
-
-                    # --- Accuracy Section ---
-                    st.subheader("📊 Model Accuracy")
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Accuracy", f"{acc:.3f}")
-                    col2.metric("Precision", f"{prec:.3f}")
-                    col3.metric("Recall", f"{rec:.3f}")
-                    col4.metric("F1 Score", f"{f1:.3f}")
-
-                    # --- Validation Section ---
-                    st.subheader("✅ Model Validation")
-                    vcol1, vcol2, vcol3 = st.columns(3)
-                    vcol1.metric("Performance", "High" if f1 > 0.8 else "Moderate" if f1 > 0.5 else "Low")
-                    vcol2.metric("Recall Level", "Good" if rec > 0.7 else "Poor")
-                    vcol3.metric("Precision Level", "Stable" if prec > 0.7 else "Unstable")
-
-                    # --- Confusion Matrix Section ---
-                    st.subheader("📘 Confusion Matrix (Validation Visualization)")
-
-                    # Ensure unique labels
-                    labels = np.unique(np.concatenate((y_test_cat, y_pred_cat)))
-                    cm = confusion_matrix(y_test_cat, y_pred_cat, labels=labels)
-
-                    # Limit labels display if too large
-                    if len(labels) > 20:
-                        labels = labels[:20]
-                        cm = confusion_matrix(y_test_cat, y_pred_cat, labels=labels)
-
-                    # ---- Create white-background figure ----
-                    fig, ax = plt.subplots(figsize=(6, 5))
-                    fig.patch.set_facecolor('white')
-                    ax.set_facecolor('white')
-
-                    sns.heatmap(
-                        cm,
-                        annot=True,
-                        fmt="d",
-                        cmap="Blues",
-                        cbar=True,
-                        linewidths=0.5,
-                        xticklabels=labels,
-                        yticklabels=labels,
-                        ax=ax
-                    )
-
-                    ax.set_xlabel("Predicted Labels", color='black')
-                    ax.set_ylabel("True Labels", color='black')
-                    st.pyplot(fig)
-
-                    # feature importance (both modes)
-                if task_type == "Regression":
-                    st.subheader("🌿 Feature Importance")
-                if task_type == "Classification":
-                    st.subheader("🌿 Feature Importance")
-                try:
-                    rf_obj = rf if task_type == "Regression" else rf_clf
-                    importances = pd.DataFrame({
-                        "Feature": features.columns,
-                        "Importance": rf_obj.feature_importances_
-                    }).sort_values("Importance", ascending=False)
-
-                    fig, ax = plt.subplots(figsize=(7, max(3, 0.5 * len(importances))))
-                    sns.barplot(x="Importance", y="Feature", data=importances, ax=ax)
-                    ax.set_title("Feature Importance")
-                    st.pyplot(fig)
-
-                    # Predictive microplastic levels — regression only (simulated)
-                    if task_type == "Regression":
-                        st.subheader("🔮 Predictive Microplastic Levels")
-
-                        # Generate simulated forecast for next 5 years (2026–2030)
-                        years = np.arange(2026, 2031)
-                        avg_pred = float(np.mean(y_pred)) if 'y_pred' in locals() and len(y_pred) > 0 else 0
-                        future_preds = np.linspace(avg_pred * 0.9, avg_pred * 1.1, len(years))
-
-                        # Plot forecasted microplastic levels
-                        fig, ax = plt.subplots()
-                        ax.plot(years, future_preds, marker='o', label='Forecasted Level')
-                        ax.set_xlabel("Future Year")
-                        ax.set_ylabel("Predicted Microplastic Level (µg/L)")
-                        ax.set_title("Predicted Microplastic Levels for Next 5 Years")
-                        ax.legend()
-                        st.pyplot(fig)
-
-                        # --- User input for specific year prediction ---
-                        st.markdown("### 📅 Enter a Future Year (Next 5 Years)")
-                        future_year = st.number_input(
-                            "Enter a year (e.g., 2026–2030):",
-                            min_value=int(years[0]),
-                            max_value=int(years[-1]),
-                            step=1
-                        )
-
-                        if future_year in years:
-                            predicted_value = future_preds[list(years).index(future_year)]
-                            st.success(f"🌍 Predicted microplastic level in **{int(future_year)}**: {predicted_value:.2f} µg/L")
-                        else:
-                            st.info("Enter a valid year between 2026 and 2030 to see prediction.")
-
-                        # Save forecast to session_state for Reports tab
-                        future_df = pd.DataFrame({"Year": years, "Predicted_Microplastic_Level": future_preds})
-                        st.session_state["future_df"] = future_df
-
-                except Exception as e:
-                    st.warning(f"Could not display feature importance or predictions: {e}")
-        
-        except Exception as e:
-                st.error(f"Random Forest failed: {e}")
-
-    # -------------------- PROPHET --------------------
-    elif model_choice == "Prophet":
-        try:
-            from prophet import Prophet
-            from sklearn.metrics import mean_absolute_error
-            year_col = [c for c in df_model.columns if c.lower() == "year"][0]
-            prophet_df = df_model[[year_col, target_col]].rename(columns={year_col: "ds", target_col: "y"})
-            prophet_df["ds"] = pd.to_datetime(prophet_df["ds"].astype(int).astype(str) + "-01-01")
-
-            prophet_df = prophet_df.dropna().drop_duplicates(subset=["ds"]).sort_values("ds")
-
-            if len(prophet_df) < 10:
-                st.warning("⚠️ Not enough data points for Prophet (minimum 10). Try SARIMA instead.")
-            else:
-                m = Prophet(yearly_seasonality=True)
-                m.fit(prophet_df)
-                future = m.make_future_dataframe(periods=5, freq='Y')
-                forecast = m.predict(future)
-                y_true = prophet_df["y"]
-                y_pred = m.predict(prophet_df)["yhat"]
-
-                r2 = r2_score(y_true, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-                mae = mean_absolute_error(y_true, y_pred)
-
-                def interpret_r2(r2): 
-                    return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
-                def interpret_err(err, y): 
-                    ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
-                    return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
-
-                # --- Accuracy Section ---
-                st.subheader("📊 Model Accuracy")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("R²", f"{r2:.3f}")
-                col2.metric("RMSE", f"{rmse:.3f}")
-                col3.metric("MAE", f"{mae:.3f}")
-
-                # --- Validation Section ---
-                vcol1, vcol2, vcol3 = st.columns(3)
-                vcol1.metric("R² Interpretation", interpret_r2(r2))
-                vcol2.metric("RMSE Level", interpret_err(rmse, y_true))
-                vcol3.metric("MAE Level", interpret_err(mae, y_true))
-
-                st.pyplot(m.plot(forecast))
-                st.pyplot(m.plot_components(forecast))
-
-        except Exception as e:
-            st.error(f"Prophet forecasting failed: {e}")
-
-    # -------------------- SARIMA --------------------
+    # ---------------- SARIMA ----------------
     elif model_choice == "SARIMA":
-        st.markdown("### 🔁 SARIMA")
-        try:
-            import statsmodels.api as sm
-            import itertools
-            from sklearn.metrics import mean_absolute_error
+        import statsmodels.api as sm
+        ts = yearly.set_index(year_col)[target_col]
+        p = d = q = [0, 1]
+        pdq = list(itertools.product(p, d, q))
+        best_aic, best_res, best_order = np.inf, None, None
+        for order in pdq:
+            try:
+                model = sm.tsa.statespace.SARIMAX(ts, order=order, enforce_stationarity=False)
+                results = model.fit(disp=False)
+                if results.aic < best_aic:
+                    best_aic, best_res, best_order = results.aic, results, order
+            except:
+                continue
+        if best_res is not None:
+            st.success(f"Best SARIMA order: {best_order} (AIC={best_aic:.2f})")
+            forecast = best_res.get_forecast(steps=5)
+            forecast_mean = forecast.predicted_mean
+            forecast_ci = forecast.conf_int()
+            fig, ax = plt.subplots()
+            ts.plot(ax=ax, label="Observed")
+            forecast_mean.plot(ax=ax, color="r", label="Forecast")
+            ax.fill_between(forecast_ci.index, forecast_ci.iloc[:, 0], forecast_ci.iloc[:, 1], color="pink", alpha=0.3)
+            ax.legend()
+            st.pyplot(fig)
 
-            year_col = [c for c in df_model.columns if c.lower() == "year"][0]
-            ts = df_model.set_index(year_col)[target_col].astype(float)
+    # ---------------- ARIMA ----------------
+    elif model_choice == "ARIMA":
+        from statsmodels.tsa.arima.model import ARIMA
+        ts = yearly[target_col]
+        model = ARIMA(ts, order=(5, 1, 0))
+        fit = model.fit()
+        forecast = fit.forecast(steps=5)
+        st.subheader("🔴 ARIMA Forecast")
+        st.line_chart(forecast)
 
-            p = d = q = [0, 1]
-            pdq = list(itertools.product(p, d, q))
-            best_aic = np.inf
-            best_res, best_order = None, None
-
-            for order in pdq:
-                try:
-                    model = sm.tsa.statespace.SARIMAX(ts, order=order, enforce_stationarity=False, enforce_invertibility=False)
-                    results = model.fit(disp=False)
-                    if results.aic < best_aic:
-                        best_aic, best_res, best_order = results.aic, results, order
-                except:
-                    continue
-
-            if best_res is not None:
-                st.success(f"Best SARIMA order: {best_order} (AIC={best_aic:.2f})")
-
-                fitted = best_res.fittedvalues
-                r2 = r2_score(ts, fitted)
-                rmse = np.sqrt(mean_squared_error(ts, fitted))
-                mae = mean_absolute_error(ts, fitted)
-
-                def interpret_r2(r2): 
-                    return "Excellent" if r2 >= 0.8 else "Good" if r2 >= 0.6 else "Fair" if r2 >= 0.3 else "Poor" if r2 >= 0 else "Very Poor"
-                def interpret_err(err, y): 
-                    ratio = (err / np.mean(y)) * 100 if np.mean(y) != 0 else 0
-                    return "Low" if ratio < 10 else "Moderate" if ratio < 30 else "High"
-
-                # --- Accuracy Section ---
-                st.subheader("📊 Model Accuracy")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("R²", f"{r2:.3f}")
-                col2.metric("RMSE", f"{rmse:.3f}")
-                col3.metric("MAE", f"{mae:.3f}")
-
-                # --- Validation Section ---
-                vcol1, vcol2, vcol3 = st.columns(3)
-                vcol1.metric("R² Interpretation", interpret_r2(r2))
-                vcol2.metric("RMSE Level", interpret_err(rmse, ts))
-                vcol3.metric("MAE Level", interpret_err(mae, ts))
-
-                # Forecast Plot
-                steps = 5
-                pred = best_res.get_forecast(steps=steps)
-                pred_ci = pred.conf_int()
-                last_year = int(ts.index.max())
-                years = np.arange(last_year + 1, last_year + 1 + steps)
-                preds = pred.predicted_mean.values
-
-                fig, ax = plt.subplots(figsize=(8, 4))
-                ts.plot(ax=ax, label="Observed")
-                ax.plot(years, preds, color="red", marker="o", label="Forecast")
-                ax.fill_between(years, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color='pink', alpha=0.3)
-                ax.legend()
-                st.pyplot(fig)
-            else:
-                st.error("SARIMA model fit failed for all attempted orders.")
-
-        except Exception as e:
-            st.error(f"SARIMA forecasting failed: {e}")
+    # ---------------- SES ----------------
+    elif model_choice == "SES":
+        from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+        ts = yearly[target_col]
+        model = SimpleExpSmoothing(ts)
+        fit = model.fit()
+        forecast = fit.forecast(steps=5)
+        st.subheader("🟢 Simple Exponential Smoothing Forecast")
+        st.line_chart(forecast)
 
 # -------------------- REPORTS --------------------
 elif menu == "📜 Reports":
-    st.title(f"📜 Reports Section of {selected_dataset}")
-    st.write("Generate downloadable reports of analytics and predictions.")
-    st.subheader("1️⃣ Summary Report")
+    st.title("📜 Reports")
     st.dataframe(df.describe())
-
     if "future_df" in st.session_state:
-        future_df = st.session_state["future_df"]
-        st.subheader("2️⃣ Forecast Results (2026–2030)")
-        st.dataframe(future_df.style.format({"Predicted_Microplastic_Level": "{:.2f}"}))
-        csv = future_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Download Forecast (CSV)",
-            data=csv,
-            file_name=f"{selected_dataset}_forecast_2026_2030.csv",
-            mime="text/csv"
-        )
+        st.dataframe(st.session_state["future_df"])
     else:
-        st.info("⚠️ No forecast data available yet. Please run Predictions tab first.")
+        st.info("Run a forecast first to generate report data.")
