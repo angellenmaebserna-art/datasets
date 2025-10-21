@@ -662,7 +662,7 @@ elif menu == "🔮 Predictions":
         except Exception as e:
                 st.error(f"Random Forest failed: {e}")
 
-   # -------------------- PROPHET --------------------
+    # -------------------- PROPHET --------------------
 elif model_choice == "Prophet":
     try:
         from prophet import Prophet
