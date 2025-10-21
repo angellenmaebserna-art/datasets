@@ -208,11 +208,7 @@ elif menu == "🌍 Heatmap":
 elif menu == "📊 Analytics":
     st.title(f"📊 Analytics of {selected_dataset}")
     st.write("Descriptive and correlation overview of the dataset.")
-
-    # --- Keep Ma'am's descriptive analysis, visualizations, classification, but REMOVE forecasting results here ---
     st.markdown("---")
-    st.header("🔬 Extended Research Analysis (from microplasticDM)")
-    st.write("Below is Ma'am's analysis — comments and explanations preserved. Forecasting results have been moved to the Predictions tab.")
 
     # Normalize columns to expected names (case-insensitive)
     col_map = {}
@@ -329,84 +325,6 @@ elif menu == "📊 Analytics":
         except Exception as e:
             st.warning(f"Geographical aggregation failed: {e}")
 
-        # ------- Preprocessing & Classification snippet (from microplasticDM) -------
-        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example) — Ma'am's code preserved")
-        try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.preprocessing import OneHotEncoder
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.metrics import classification_report, accuracy_score
-
-            # Ensure required columns exist
-            features_cols = []
-            for col in ['Site', 'Place', 'Latitude', 'Longitude', 'Year']:
-                if col in df.columns:
-                    features_cols.append(col)
-
-            if len(features_cols) < 2:
-                st.info("Not enough features for classification example. Skipping RF classification block.")
-            else:
-                features = ['Site', 'Place', 'Latitude', 'Longitude', 'Year']
-                # keep only existing features
-                features = [f for f in features if f in df.columns]
-                target = 'Microplastic_Level'
-                X = df[features].copy()
-                y = df[target].copy()
-
-                # encode categorical features if present
-                categorical_features = [c for c in ['Site','Place'] if c in X.columns]
-                if len(categorical_features) > 0:
-                    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-                    encoded_categorical_features = encoder.fit_transform(X[categorical_features])
-                    encoded_feature_names = encoder.get_feature_names_out(categorical_features)
-                    encoded_df = pd.DataFrame(encoded_categorical_features, columns=encoded_feature_names, index=X.index)
-                    X = X.drop(categorical_features, axis=1)
-                    X = pd.concat([X, encoded_df], axis=1)
-
-                # categorize microplastic level into Low/Medium/High using quantiles (as in Ma'am's notebook)
-                low_threshold = y.quantile(0.5)
-                medium_threshold = y.quantile(0.9)
-
-                def categorize_microplastic_level(level):
-                    if level <= low_threshold:
-                        return 'Low'
-                    elif level <= medium_threshold:
-                        return 'Medium'
-                    else:
-                        return 'High'
-
-                y_categorized = y.apply(categorize_microplastic_level)
-
-                # split
-                X_train, X_test, y_train, y_test = train_test_split(X, y_categorized, test_size=0.2, random_state=42, stratify=y_categorized)
-
-                rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
-                rf_clf.fit(X_train, y_train)
-                y_pred_cat = rf_clf.predict(X_test)
-
-                classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
-                acc = accuracy_score(y_test, y_pred_cat)
-
-                # ---- Enhanced display: show classification report as DataFrame (clean table format) ----
-                from sklearn.metrics import classification_report, accuracy_score
-                import pandas as pd
-
-                # generate classification report as dict
-                classification_rep = classification_report(y_test, y_pred_cat, output_dict=True, zero_division=0)
-                acc = accuracy_score(y_test, y_pred_cat)
-
-                # convert to DataFrame
-                report_df = pd.DataFrame(classification_rep).transpose()
-
-                st.subheader("📘 Classification Report (Random Forest)")
-                st.dataframe(report_df.style.format("{:.2f}"))
-
-                # Display accuracy separately below
-                st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
-
-
-        except Exception as e:
-            st.warning(f"Classification block failed or skipped: {e}")
 
         # NOTE: Forecasting blocks (ARIMA, SES, Prophet, combined plot) were originally here in Ma'am's notebook.
         # Per your instruction, those forecasting RESULT displays are moved to the Predictions tab below.
@@ -572,6 +490,85 @@ elif menu == "🔮 Predictions":
                     vcol1.metric("Performance", "High" if f1 > 0.8 else "Moderate" if f1 > 0.5 else "Low")
                     vcol2.metric("Recall Level", "Good" if rec > 0.7 else "Poor")
                     vcol3.metric("Precision Level", "Stable" if prec > 0.7 else "Unstable")
+
+                     # ------- Preprocessing & Classification snippet (from microplasticDM) -------
+        st.markdown("### 🧠 Preprocessing & Classification (Random Forest example) — Ma'am's code preserved")
+        try:
+            from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import OneHotEncoder
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import classification_report, accuracy_score
+
+            # Ensure required columns exist
+            features_cols = []
+            for col in ['Site', 'Place', 'Latitude', 'Longitude', 'Year']:
+                if col in df.columns:
+                    features_cols.append(col)
+
+            if len(features_cols) < 2:
+                st.info("Not enough features for classification example. Skipping RF classification block.")
+            else:
+                features = ['Site', 'Place', 'Latitude', 'Longitude', 'Year']
+                # keep only existing features
+                features = [f for f in features if f in df.columns]
+                target = 'Microplastic_Level'
+                X = df[features].copy()
+                y = df[target].copy()
+
+                # encode categorical features if present
+                categorical_features = [c for c in ['Site','Place'] if c in X.columns]
+                if len(categorical_features) > 0:
+                    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+                    encoded_categorical_features = encoder.fit_transform(X[categorical_features])
+                    encoded_feature_names = encoder.get_feature_names_out(categorical_features)
+                    encoded_df = pd.DataFrame(encoded_categorical_features, columns=encoded_feature_names, index=X.index)
+                    X = X.drop(categorical_features, axis=1)
+                    X = pd.concat([X, encoded_df], axis=1)
+
+                # categorize microplastic level into Low/Medium/High using quantiles (as in Ma'am's notebook)
+                low_threshold = y.quantile(0.5)
+                medium_threshold = y.quantile(0.9)
+
+                def categorize_microplastic_level(level):
+                    if level <= low_threshold:
+                        return 'Low'
+                    elif level <= medium_threshold:
+                        return 'Medium'
+                    else:
+                        return 'High'
+
+                y_categorized = y.apply(categorize_microplastic_level)
+
+                # split
+                X_train, X_test, y_train, y_test = train_test_split(X, y_categorized, test_size=0.2, random_state=42, stratify=y_categorized)
+
+                rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
+                rf_clf.fit(X_train, y_train)
+                y_pred_cat = rf_clf.predict(X_test)
+
+                classification_rep = classification_report(y_test, y_pred_cat, zero_division=0)
+                acc = accuracy_score(y_test, y_pred_cat)
+
+                # ---- Enhanced display: show classification report as DataFrame (clean table format) ----
+                from sklearn.metrics import classification_report, accuracy_score
+                import pandas as pd
+
+                # generate classification report as dict
+                classification_rep = classification_report(y_test, y_pred_cat, output_dict=True, zero_division=0)
+                acc = accuracy_score(y_test, y_pred_cat)
+
+                # convert to DataFrame
+                report_df = pd.DataFrame(classification_rep).transpose()
+
+                st.subheader("📘 Classification Report (Random Forest)")
+                st.dataframe(report_df.style.format("{:.2f}"))
+
+                # Display accuracy separately below
+                st.markdown(f"**Overall Accuracy:** `{acc:.4f}`")
+
+
+        except Exception as e:
+            st.warning(f"Classification block failed or skipped: {e}")
 
                     # --- Confusion Matrix Section ---
                     st.subheader("📘 Confusion Matrix (Validation Visualization)")
