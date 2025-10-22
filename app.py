@@ -4,7 +4,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import prophet
+from prophet import Prophet
+import numpy as np
+if not hasattr(np, 'float_'):
+    np.float_ = float
 import statsmodels
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestRegressor
