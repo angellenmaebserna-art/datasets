@@ -4,9 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import cmdstanpy
-import prophet
 import statsmodels
+from prophet import Prophet
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
