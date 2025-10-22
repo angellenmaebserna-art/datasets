@@ -1,10 +1,10 @@
 streamlit
 pandas
-numpy<2.0.0
+numpy
 matplotlib
 seaborn
 scikit-learn
 statsmodels
-prophet==1.1.5
-cmdstanpy==1.2.0
+prophet
+cmdstanpy
 folium
