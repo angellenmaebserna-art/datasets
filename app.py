@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from prophet import Prophet
+import cmdstanpy
+import prophet
 import statsmodels
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestRegressor
