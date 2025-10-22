@@ -469,7 +469,7 @@ elif menu == "🔮 Predictions":
                     f1 = f1_score(y_test_cat, y_pred_cat, average="weighted", zero_division=0)
 
                     # --- Accuracy Section ---
-                    st.subheader("📊 Model Accuracy")
+                    st.subheader("🧠 Preprocessing & Classification")
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Accuracy", f"{acc:.3f}")
                     col2.metric("Precision", f"{prec:.3f}")
@@ -483,7 +483,6 @@ elif menu == "🔮 Predictions":
                     vcol2.metric("Recall Level", "Good" if rec > 0.7 else "Poor")
                     vcol3.metric("Precision Level", "Stable" if prec > 0.7 else "Unstable")
 
-                    st.markdown("### 🧠 Preprocessing & Classification")
                     try:
                         from sklearn.model_selection import train_test_split
                         from sklearn.preprocessing import OneHotEncoder
@@ -576,12 +575,12 @@ elif menu == "🔮 Predictions":
                     st.pyplot(fig)
 
 
-                # 🌿 Feature importance (works for both reg & clf if model variable exists)
+                # 🌿 Feature importance (works for regression only)
                 if task_type == "Regression":
                     st.subheader("🌿 Feature Importance")
                 try:
                     # choose rf object depending on mode
-                    rf_obj = rf if task_type == "Regression" else rf_clf
+                    rf_obj = rf if task_type == "Regression only" else rf_clf
                     importances = pd.DataFrame(
                         {"Feature": features.columns, "Importance": rf_obj.feature_importances_}
                     ).sort_values("Importance", ascending=False)
@@ -804,6 +803,85 @@ elif menu == "🔮 Predictions":
 
         except Exception as e:
             st.error(f"SARIMA forecasting failed: {e}")
+
+            # -------------------- ALL / COMPARE (Combined Forecast Plot) --------------------
+    elif model_choice == "All (compare)":
+        st.subheader("📉 Combined Historical & Forecast Plot")
+        # Recompute yearly if needed
+        if yearly_microplastic is None:
+            if 'Year' in df_model.columns:
+                yearly_microplastic = df_model.groupby('Year')[target_col].mean().reset_index().rename(columns={target_col:'Microplastic_Level'})
+        if yearly_microplastic is None or len(yearly_microplastic) < 3:
+            st.info("Not enough yearly data for combined forecasting.")
+        else:
+            # ARIMA forecast
+            try:
+                from statsmodels.tsa.arima.model import ARIMA
+                arima_fit = ARIMA(yearly_microplastic['Microplastic_Level'], order=(5,1,0)).fit()
+                arima_forecast = arima_fit.forecast(steps=3)
+                arima_steps = 3
+            except Exception as e:
+                arima_forecast = None
+                arima_steps = 0
+                st.warning(f"ARIMA in combined failed: {e}")
+
+            # SES forecast
+            try:
+                from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+                ses_fit = SimpleExpSmoothing(yearly_microplastic['Microplastic_Level']).fit()
+                ses_forecast = ses_fit.forecast(steps=3)
+                ses_steps = 3
+            except Exception as e:
+                ses_forecast = None
+                ses_steps = 0
+                st.warning(f"SES in combined failed: {e}")
+
+            # Prophet forecast
+            try:
+                from prophet import Prophet
+                prophet_df = yearly_microplastic.copy()
+                prophet_df['ds'] = pd.to_datetime(prophet_df['Year'].astype(int).astype(str) + '-01-01')
+                prophet_df['y'] = prophet_df['Microplastic_Level']
+                prophet_df = prophet_df[['ds','y']].dropna().drop_duplicates(subset=['ds']).sort_values('ds')
+                if len(prophet_df) >= 3:
+                    m = Prophet(yearly_seasonality=True)
+                    with st.spinner("Training Prophet for combined plot..."):
+                        m.fit(prophet_df)
+                    future = m.make_future_dataframe(periods=3, freq='Y')
+                    forecast_prophet = m.predict(future)
+                else:
+                    forecast_prophet = None
+            except Exception as e:
+                forecast_prophet = None
+                st.warning(f"Prophet in combined failed: {e}")
+
+            # Plot combined
+            try:
+                fig, ax = plt.subplots(figsize=(10,6))
+                ax.plot(yearly_microplastic['Year'], yearly_microplastic['Microplastic_Level'], marker='o', label='Historical Data')
+
+                last_year = int(yearly_microplastic['Year'].iloc[-1])
+
+                if arima_forecast is not None:
+                    forecast_years = list(range(last_year+1, last_year + arima_steps + 1))
+                    ax.plot(forecast_years, list(arima_forecast), marker='x', linestyle='--', label='ARIMA Forecast', color='red')
+
+                if ses_forecast is not None:
+                    forecast_years_ses = list(range(last_year+1, last_year + ses_steps + 1))
+                    ax.plot(forecast_years_ses, list(ses_forecast), marker='o', linestyle='--', label='SES Forecast', color='green')
+
+                if forecast_prophet is not None:
+                    prophet_future_forecast = forecast_prophet[forecast_prophet['ds'] > prophet_df['ds'].max()]
+                    if not prophet_future_forecast.empty:
+                        ax.plot(prophet_future_forecast['ds'].dt.year, prophet_future_forecast['yhat'], marker='^', linestyle='-.', label='Prophet Forecast', color='purple')
+                        ax.fill_between(prophet_future_forecast['ds'].dt.year, prophet_future_forecast['yhat_lower'], prophet_future_forecast['yhat_upper'], color='purple', alpha=0.1)
+
+                ax.set_title('Historical and Forecasted Microplastic Levels')
+                ax.set_xlabel('Year'); ax.set_ylabel('Microplastic Level')
+                ax.legend(); ax.grid(True)
+                st.pyplot(fig)
+            except Exception as e:
+                st.warning(f"Combined forecast plot failed: {e}")
 
 # -------------------- REPORTS --------------------
 elif menu == "📜 Reports":
