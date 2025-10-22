@@ -4,9 +4,17 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import cmdstanpy
-import prophet
-import statsmodels
+# Try to set Prophet backend environment to CMDSTANPY to reduce backend errors in restricted envs
+os.environ.setdefault('PROPHET_BACKEND', 'CMDSTANPY')
+
+# Optional: avoid matplotlib warnings in Streamlit
+plt.ioff()
+
+# ML / stats imports (used in various parts; wrapped in try: except when used)
+try:
+    import cmdstanpy
+except Exception:
+    cmdstanpy = None
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
